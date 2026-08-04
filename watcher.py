@@ -198,7 +198,9 @@ def main():
         sold_out = ev.get("soldOut", False)
         ratio = ev.get("availabilityRatio", 0) or 0
         est_free = round(ratio * 400)
-        link = ev.get("bookingLink") or \
+        link = (ev.get("bookingLink") or
+                f"https://www.planetcinema.co.il/il/booking-router/launch/{ev_id}?lang=he"
+                ).replace("/api/order/", "/order/")
             f"https://www.planetcinema.co.il/il/booking-router/launch/{ev_id}?lang=he"
 
         # --- decide "ok" ---
