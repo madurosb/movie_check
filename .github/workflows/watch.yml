@@ -2,7 +2,7 @@ name: Odyssey IMAX Watcher
 
 on:
   schedule:
-    - cron: "*/10 * * * *"   # every 15 minutes
+    - cron: "*/15 * * * *"   # every 15 minutes
   workflow_dispatch:          # manual run button
 
 permissions:
@@ -21,6 +21,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
 
       - name: Run watcher
         env:
