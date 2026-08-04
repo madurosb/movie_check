@@ -116,7 +116,29 @@ def open_ticket_session(session, event_id):
     if not m:
         # sometimes the id is inside the final HTML
         m = re.search(r"/order/(\d+)", r.text or "")
-    return m.group(1) if m else None
+    pid = m.group(1) if m else None
+
+    # mimic the SPA: uuid cookie matching the uuid header + config bootstrap
+    u = str(uuidlib.uuid4())
+    session.headers["x-watcher-uuid"] = u  # stash for ticket_api
+    session.cookies.set("uuid", u, domain="tickets5.planetcinema.co.il")
+    session.cookies.set("lang", "iw_IL", domain="tickets5.planetcinema.co.il")
+    if pid:
+        for cfg_path in ("/api/config", f"/api/config?presentationId={pid}"):
+            try:
+                cr = session.get(f"{TICKETS}{cfg_path}", timeout=30, headers={
+                    "User-Agent": UA,
+                    "Accept": "application/json, text/plain, */*",
+                    "Referer": f"{TICKETS}/order/{pid}?lang=he",
+                    "uuid": u,
+                })
+                print(f"  config {cfg_path} -> {cr.status_code}")
+                if cr.ok:
+                    break
+            except Exception as ce:
+                print(f"  config {cfg_path} failed: {ce}")
+    print(f"  landed: {r.url} | cookies: {sorted(c.name for c in session.cookies)}")
+    return pid
 
 
 def ticket_api(session, path, presentation_id):
@@ -124,9 +146,11 @@ def ticket_api(session, path, presentation_id):
         "User-Agent": UA,
         "Accept": "application/json, text/plain, */*",
         "Referer": f"{TICKETS}/order/{presentation_id}?lang=he",
-        "uuid": str(uuidlib.uuid4()),
+        "uuid": session.headers.get("x-watcher-uuid", str(uuidlib.uuid4())),
     }
     r = session.get(f"{TICKETS}{path}", headers=headers, timeout=30)
+    if not r.ok:
+        print(f"  {path} -> {r.status_code}: {r.text[:150]!r}")
     r.raise_for_status()
     return r.json()
 
@@ -162,8 +186,14 @@ def check_adjacent_seats(session, presentation_id):
     if not venue_id:
         raise RuntimeError(f"venueId not found; pres keys: {list(pres)[:20]}")
 
-    plan = ticket_api(session, f"/api/seats/seatplanV2?venueId={venue_id}&seatplanId={seatplan_id}",
-                      presentation_id)
+    try:
+        plan = ticket_api(session, f"/api/seats/seatplanV2?venueId={venue_id}&seatplanId={seatplan_id}",
+                          presentation_id)
+    except Exception:
+        plan = ticket_api(
+            session,
+            f"/api/seats/seatplanV2?venueId={venue_id}&seatplanId={seatplan_id}&venueTypeId=2",
+            presentation_id)
     status = ticket_api(
         session,
         f"/api/seats/seats-statusV2?presentationId={presentation_id}&venueTypeId=2&isReserved=1",
