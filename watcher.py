@@ -108,60 +108,28 @@ def collect_candidate_events(session):
 # ---------- Seat map (tickets5) ----------
 
 def open_ticket_session(session, event_id):
-    """Follow booking link -> order page. Returns presentationId or None."""
+    """Follow booking link -> extract presentationId."""
     launch = f"https://www.planetcinema.co.il/il/booking-router/launch/{event_id}?lang=he"
     r = session.get(launch, headers={"User-Agent": UA}, timeout=30,
                     allow_redirects=True)
-    m = re.search(r"/order/(\d+)", r.url)
-    if not m:
-        # sometimes the id is inside the final HTML
-        m = re.search(r"/order/(\d+)", r.text or "")
-    pid = m.group(1) if m else None
-
-    # br page redirects to tickets5 via JS; visit the order page explicitly
-    # so tickets5 issues its session cookies
-    if pid:
-        try:
-            opr = session.get(f"{TICKETS}/order/{pid}?lang=he", timeout=30,
-                              headers={"User-Agent": UA,
-                                       "Accept": "text/html,application/xhtml+xml"})
-            print(f"  order page -> {opr.status_code}")
-        except Exception as oe:
-            print(f"  order page failed: {oe}")
-
-    # mimic the SPA: uuid cookie matching the uuid header + config bootstrap
-    u = str(uuidlib.uuid4())
-    session.headers["x-watcher-uuid"] = u  # stash for ticket_api
-    session.cookies.set("uuid", u, domain="tickets5.planetcinema.co.il")
-    session.cookies.set("lang", "iw_IL", domain="tickets5.planetcinema.co.il")
-    if pid:
-        for cfg_path in ("/api/config", f"/api/config?presentationId={pid}"):
-            try:
-                cr = session.get(f"{TICKETS}{cfg_path}", timeout=30, headers={
-                    "User-Agent": UA,
-                    "Accept": "application/json, text/plain, */*",
-                    "Referer": f"{TICKETS}/order/{pid}?lang=he",
-                    "uuid": u,
-                })
-                print(f"  config {cfg_path} -> {cr.status_code}")
-                if cr.ok:
-                    break
-            except Exception as ce:
-                print(f"  config {cfg_path} failed: {ce}")
-    print(f"  landed: {r.url} | cookies: {sorted(c.name for c in session.cookies)}")
-    return pid
+    m = re.search(r"/order/(\d+)", r.url) or re.search(r"/order/(\d+)", r.text or "")
+    return m.group(1) if m else None
 
 
-def ticket_api(session, path, presentation_id):
+def ticket_api(session, path, presentation_id, method="GET"):
     headers = {
         "User-Agent": UA,
         "Accept": "application/json, text/plain, */*",
+        "Origin": TICKETS,
         "Referer": f"{TICKETS}/order/{presentation_id}?lang=he",
-        "uuid": session.headers.get("x-watcher-uuid", str(uuidlib.uuid4())),
+        "uuid": str(uuidlib.uuid4()),
     }
-    r = session.get(f"{TICKETS}{path}", headers=headers, timeout=30)
+    if method == "POST":
+        r = session.post(f"{TICKETS}{path}", headers=headers, json={}, timeout=30)
+    else:
+        r = session.get(f"{TICKETS}{path}", headers=headers, timeout=30)
     if not r.ok:
-        print(f"  {path} -> {r.status_code}: {r.text[:150]!r}")
+        print(f"  {method} {path} -> {r.status_code}: {r.text[:120]!r}")
     r.raise_for_status()
     return r.json()
 
@@ -197,14 +165,9 @@ def check_adjacent_seats(session, presentation_id):
     if not venue_id:
         raise RuntimeError(f"venueId not found; pres keys: {list(pres)[:20]}")
 
-    try:
-        plan = ticket_api(session, f"/api/seats/seatplanV2?venueId={venue_id}&seatplanId={seatplan_id}",
-                          presentation_id)
-    except Exception:
-        plan = ticket_api(
-            session,
-            f"/api/seats/seatplanV2?venueId={venue_id}&seatplanId={seatplan_id}&venueTypeId=2",
-            presentation_id)
+    plan = ticket_api(session,
+                      f"/api/seats/seatplanV2?venueId={venue_id}&seatplanId={seatplan_id}",
+                      presentation_id, method="POST")
     status = ticket_api(
         session,
         f"/api/seats/seats-statusV2?presentationId={presentation_id}&venueTypeId=2&isReserved=1",
