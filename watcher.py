@@ -118,6 +118,17 @@ def open_ticket_session(session, event_id):
         m = re.search(r"/order/(\d+)", r.text or "")
     pid = m.group(1) if m else None
 
+    # br page redirects to tickets5 via JS; visit the order page explicitly
+    # so tickets5 issues its session cookies
+    if pid:
+        try:
+            opr = session.get(f"{TICKETS}/order/{pid}?lang=he", timeout=30,
+                              headers={"User-Agent": UA,
+                                       "Accept": "text/html,application/xhtml+xml"})
+            print(f"  order page -> {opr.status_code}")
+        except Exception as oe:
+            print(f"  order page failed: {oe}")
+
     # mimic the SPA: uuid cookie matching the uuid header + config bootstrap
     u = str(uuidlib.uuid4())
     session.headers["x-watcher-uuid"] = u  # stash for ticket_api
