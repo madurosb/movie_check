@@ -131,6 +131,24 @@ def ticket_api(session, path, presentation_id):
     return r.json()
 
 
+
+def find_key(obj, names):
+    """Recursively find first value whose key (lowercased) is in names."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k.lower() in names and v not in (None, "", 0):
+                return v
+        for v in obj.values():
+            r = find_key(v, names)
+            if r is not None:
+                return r
+    elif isinstance(obj, list):
+        for v in obj:
+            r = find_key(v, names)
+            if r is not None:
+                return r
+    return None
+
 def check_adjacent_seats(session, presentation_id):
     """
     Returns (best_run, row_name) — the longest run of adjacent free seats
@@ -139,8 +157,10 @@ def check_adjacent_seats(session, presentation_id):
     """
     pres = ticket_api(session, f"/api/presentations/{presentation_id}?referralMiniSiteId=0",
                       presentation_id)
-    venue_id = pres.get("venueId") or pres.get("venue", {}).get("id")
-    seatplan_id = pres.get("seatplanId") or pres.get("seatPlanId") or 1
+    venue_id = find_key(pres, {"venueid"})
+    seatplan_id = find_key(pres, {"seatplanid"}) or 1
+    if not venue_id:
+        raise RuntimeError(f"venueId not found; pres keys: {list(pres)[:20]}")
 
     plan = ticket_api(session, f"/api/seats/seatplanV2?venueId={venue_id}&seatplanId={seatplan_id}",
                       presentation_id)
@@ -201,7 +221,6 @@ def main():
         link = (ev.get("bookingLink") or
                 f"https://www.planetcinema.co.il/il/booking-router/launch/{ev_id}?lang=he"
                 ).replace("/api/order/", "/order/")
-            f"https://www.planetcinema.co.il/il/booking-router/launch/{ev_id}?lang=he"
 
         # --- decide "ok" ---
         ok, detail = False, ""
