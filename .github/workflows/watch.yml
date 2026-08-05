@@ -1,9 +1,7 @@
 name: Odyssey IMAX Watcher
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"   # every 5 minutes
-  workflow_dispatch:          # manual run button
+  workflow_dispatch:          # triggered by cron-job.org every 5 min (or manually)
 
 permissions:
   contents: write
