@@ -256,11 +256,21 @@ def main():
 
         state[ev_id] = {"ok": ok, "dt": ev["eventDateTime"]}
 
+    # daily heartbeat: one status message per day, first run after 06:00 UTC (09:00 IL)
+    now = dt.datetime.now(dt.timezone.utc)
+    today = str(now.date())
+    if not alerts and now.hour >= 6 and state.get("_heartbeat") != today:
+        n_ev = len(events)
+        alerts.append(f"💓 המערכת פעילה — נבדקו {n_ev} הקרנות, אין שינוי מתאים")
+        state["_heartbeat"] = today
+    elif alerts:
+        state["_heartbeat"] = today
+
     save_state(state)
 
     if alerts:
         send_telegram("\n\n".join(alerts))
-        print(f"sent {len(alerts)} alert(s)")
+        print(f"sent {len(alerts)} message(s)")
     else:
         print("no new matching events")
 
