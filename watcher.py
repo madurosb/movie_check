@@ -46,12 +46,13 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 # ---------- Telegram ----------
 
 def send_telegram(text):
-    requests.post(
-        f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
-        json={"chat_id": TG_CHAT, "text": text,
-              "disable_web_page_preview": True},
-        timeout=30,
-    ).raise_for_status()
+    for chat in TG_CHAT.split(","):
+        requests.post(
+            f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+            json={"chat_id": chat.strip(), "text": text,
+                  "disable_web_page_preview": True},
+            timeout=30,
+        ).raise_for_status()
 
 
 # ---------- State ----------
