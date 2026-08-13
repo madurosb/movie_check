@@ -63,13 +63,28 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 # ---------- Telegram ----------
 
 def send_telegram(text):
+    """Send to every chat id. Returns True if at least one delivery succeeded."""
+    ok_any = False
     for chat in TG_CHAT.split(","):
-        requests.post(
-            f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
-            json={"chat_id": chat.strip(), "text": text,
-                  "disable_web_page_preview": True},
-            timeout=30,
-        ).raise_for_status()
+        chat = chat.strip()
+        if not chat:
+            continue
+        try:
+            r = requests.post(
+                f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+                json={"chat_id": chat, "text": text,
+                      "disable_web_page_preview": True},
+                timeout=30,
+            )
+            if r.ok:
+                ok_any = True
+                print(f"  telegram -> {chat}: OK")
+            else:
+                print(f"  telegram -> {chat}: FAILED {r.status_code} {r.text[:200]}",
+                      file=sys.stderr)
+        except Exception as e:
+            print(f"  telegram -> {chat}: EXCEPTION {e}", file=sys.stderr)
+    return ok_any
 
 
 # ---------- State ----------
@@ -303,13 +318,23 @@ def main():
     elif alerts:
         state["_heartbeat"] = today
 
-    save_state(state)
-
     if alerts:
-        send_telegram("\n\n".join(alerts))
-        print(f"sent {len(alerts)} message(s)")
+        delivered = True
+        # telegram caps messages at 4096 chars - send in small batches
+        for i in range(0, len(alerts), 4):
+            chunk = "\n\n".join(alerts[i:i + 4])
+            if not send_telegram(chunk):
+                delivered = False
+        if delivered:
+            print(f"delivered {len(alerts)} alert(s)")
+            save_state(state)
+        else:
+            print("DELIVERY FAILED - state not saved, will retry next run",
+                  file=sys.stderr)
+            sys.exit(1)
     else:
         print("no new matching events")
+        save_state(state)
 
 
 if __name__ == "__main__":
