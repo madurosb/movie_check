@@ -34,5 +34,13 @@ jobs:
           git config user.name "watcher-bot"
           git config user.email "bot@users.noreply.github.com"
           git add seen_events.json || true
-          git diff --cached --quiet || git commit -m "update state [skip ci]"
-          git push
+          git diff --cached --quiet && exit 0
+          git commit -m "update state [skip ci]"
+          for i in 1 2 3 4 5; do
+            git push && exit 0
+            echo "push rejected, rebasing onto latest main (attempt $i)"
+            git pull --rebase --autostash origin main || true
+            sleep 3
+          done
+          echo "could not push state after 5 attempts" >&2
+          exit 1
