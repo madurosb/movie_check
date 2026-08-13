@@ -177,6 +177,7 @@ def check_adjacent_seats(session, presentation_id):
     free = set(status.get("seats", {}).keys())  # keys "area_seatKey_rowKey", listed = free
 
     best_run, best_row = 0, None
+    free_in_rows = 0
     for area_key, area in plan.get("S", {}).items():
         for group in area.get("G", {}).values():
             for row_key, row in group.get("R", {}).items():
@@ -198,9 +199,11 @@ def check_adjacent_seats(session, presentation_id):
                     contiguous = prev is not None and sk == prev + 1
                     run = (run + 1) if (is_free and (run == 0 or contiguous)) else (1 if is_free else 0)
                     prev = sk
+                    if is_free:
+                        free_in_rows += 1
                     if run > best_run:
                         best_run, best_row = run, row.get("n")
-    return best_run, best_row
+    return best_run, best_row, len(free), free_in_rows
 
 
 # ---------- Main ----------
@@ -235,15 +238,21 @@ def main():
                 pid = open_ticket_session(ts, ev_id)
                 if not pid:
                     raise RuntimeError("no presentationId in redirect")
-                run, row_name = check_adjacent_seats(ts, pid)
+                run, row_name, free_total, free_rows = check_adjacent_seats(ts, pid)
                 ok = run >= MIN_ADJACENT
-                detail = f"💺 {run} צמודים בשורה {row_name} (שורה {ROW_MIN}+)" if ok else \
-                         f"אין {MIN_ADJACENT} צמודים משורה {ROW_MIN} (מקס' {run})"
-                print(f"{ev_id} {when}: seatmap run={run} row={row_name}")
+                if ok:
+                    detail = (f"💺 {run} צמודים בשורה {row_name} | {free_rows} פנויים משורה {ROW_MIN}+ | {free_total} באולם\n"
+                              f"💺 {run} adjacent in row {row_name} | {free_rows} free from row {ROW_MIN}+ | {free_total} in hall")
+                else:
+                    detail = (f"💺 אין {MIN_ADJACENT} צמודים (מקס' {run}) | {free_rows} פנויים משורה {ROW_MIN}+ | {free_total} באולם\n"
+                              f"💺 no {MIN_ADJACENT} adjacent (max {run}) | {free_rows} free from row {ROW_MIN}+ | {free_total} in hall")
+                print(f"{ev_id} {when}: run={run} row={row_name} "
+                      f"free_rows={free_rows} free_total={free_total}")
             except Exception as e:
                 # fallback: total-free estimate
                 ok = est_free >= FALLBACK_MIN_SEATS
-                detail = f"💺 כ-{est_free} פנויים (בדיקת שורות לא זמינה)"
+                detail = (f"💺 כ-{est_free} פנויים (בדיקת שורות לא זמינה)\n"
+                          f"💺 ~{est_free} free (row check unavailable)")
                 print(f"{ev_id} seatmap failed ({e}); fallback est_free={est_free}",
                       file=sys.stderr)
 
@@ -251,9 +260,15 @@ def main():
         is_new = prev is None
         became_ok = prev is not None and not prev.get("ok") and ok
 
-        if ok and (is_new or became_ok):
-            tag = "🆕 הקרנה חדשה" if is_new else "🎟️ התפנו מקומות מתאימים"
-            alerts.append(f"{tag} — האודיסאה IMAX ראשל\"צ\n🗓 {when}\n{detail}\n🔗 {link}")
+        if is_new or (became_ok and ok):
+            if is_new and ok:
+                tag = "🔥 הקרנה חדשה — יש מקומות! / New screening — seats available!"
+            elif is_new:
+                tag = "🆕 הקרנה חדשה נפתחה (בלי 4 צמודים כרגע) / New screening opened (no 4 adjacent yet)"
+            else:
+                tag = "🎟️ התפנו מקומות מתאימים / Matching seats freed up"
+            alerts.append(f"{tag}\nהאודיסאה IMAX ראשל\"צ / The Odyssey IMAX Rishon LeZion"
+                          f"\n🗓 {when}\n{detail}\n🔗 {link}")
 
         state[ev_id] = {"ok": ok, "dt": ev["eventDateTime"]}
 
@@ -262,7 +277,8 @@ def main():
     today = str(now.date())
     if not alerts and now.hour >= 6 and state.get("_heartbeat") != today:
         n_ev = len(events)
-        alerts.append(f"💓 המערכת פעילה — נבדקו {n_ev} הקרנות, אין שינוי מתאים")
+        alerts.append(f"💓 המערכת פעילה — נבדקו {n_ev} הקרנות, אין שינוי מתאים\n"
+                      f"💓 Watcher alive — {n_ev} screenings checked, no matching change")
         state["_heartbeat"] = today
     elif alerts:
         state["_heartbeat"] = today
