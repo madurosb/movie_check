@@ -80,10 +80,10 @@ def quickbook_get(session, url):
 
 def collect_candidate_events(session):
     """All Odyssey IMAX events at 18:00-23:00 in the next DAYS_AHEAD days."""
-    until = dt.date.today() + dt.timedelta(days=DAYS_AHEAD)
-    dates = quickbook_get(
-        session, f"{BASE}/dates/in-cinema/{CINEMA_ID}/until/{until}?attr=imax&lang={LANG}"
-    )["dates"]
+    # scan every calendar day directly — the /dates endpoint returns a
+    # filtered subset and was hiding screenings from us
+    today = dt.date.today()
+    dates = [str(today + dt.timedelta(days=i)) for i in range(DAYS_AHEAD + 1)]
 
     events = []
     for date_str in dates:
@@ -92,17 +92,20 @@ def collect_candidate_events(session):
                 session,
                 f"{BASE}/film-events/in-cinema/{CINEMA_ID}/at-date/{date_str}?attr=&lang={LANG}",
             )
-        except Exception as e:
-            print(f"skip {date_str}: {e}", file=sys.stderr)
-            continue
+        except Exception:
+            continue  # no screenings that day
         for ev in body.get("events", []):
             if ev.get("filmId") != FILM_ID:
                 continue
             if "imax" not in [a.lower() for a in ev.get("attributeIds", [])]:
                 continue
             start = dt.datetime.fromisoformat(ev["eventDateTime"])
-            if HOUR_MIN <= start.hour <= HOUR_MAX:
+            in_window = HOUR_MIN <= start.hour <= HOUR_MAX
+            print(f"  found {ev['id']} {start:%d/%m %H:%M} "
+                  f"{'IN window' if in_window else 'outside window'}")
+            if in_window:
                 events.append(ev)
+    print(f"total in window: {len(events)}")
     return events
 
 
