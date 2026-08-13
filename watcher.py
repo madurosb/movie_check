@@ -30,7 +30,24 @@ BASE = f"https://www.planetcinema.co.il/il/data-api-service/v1/quickbook/{TENANT
 LANG = "he_IL"
 TICKETS = "https://tickets5.planetcinema.co.il"
 DAYS_AHEAD = 30
-HOUR_MIN, HOUR_MAX = 18, 23        # 18:00 <= showtime <= 23:00
+# Allowed start-time window per weekday (start_time, latest_start_time).
+# Mon-Thu + Sun: evening only. Friday: all day (day off).
+# Saturday: all day but nothing starting after 23:00 (work next morning).
+WINDOWS = {
+    0: (dt.time(17, 59), dt.time(23, 0)),   # Monday
+    1: (dt.time(17, 59), dt.time(23, 0)),   # Tuesday
+    2: (dt.time(17, 59), dt.time(23, 0)),   # Wednesday
+    3: (dt.time(17, 59), dt.time(23, 0)),   # Thursday
+    4: (dt.time(0, 0), dt.time(23, 59)),    # Friday — all day
+    5: (dt.time(0, 0), dt.time(23, 0)),     # Saturday — all day until 23:00
+    6: (dt.time(17, 59), dt.time(23, 0)),   # Sunday
+}
+
+
+def in_window(start):
+    lo, hi = WINDOWS[start.weekday()]
+    return lo <= start.time() <= hi
+
 ROW_MIN = 6                        # count adjacency only from this row number up
 MIN_ADJACENT = 4                   # need this many adjacent free seats
 FALLBACK_MIN_SEATS = 4             # fallback threshold when seat map unavailable
@@ -100,10 +117,10 @@ def collect_candidate_events(session):
             if "imax" not in [a.lower() for a in ev.get("attributeIds", [])]:
                 continue
             start = dt.datetime.fromisoformat(ev["eventDateTime"])
-            in_window = HOUR_MIN <= start.hour <= HOUR_MAX
-            print(f"  found {ev['id']} {start:%d/%m %H:%M} "
-                  f"{'IN window' if in_window else 'outside window'}")
-            if in_window:
+            ok_time = in_window(start)
+            print(f"  found {ev['id']} {start:%a %d/%m %H:%M} "
+                  f"{'IN window' if ok_time else 'outside window'}")
+            if ok_time:
                 events.append(ev)
     print(f"total in window: {len(events)}")
     return events
